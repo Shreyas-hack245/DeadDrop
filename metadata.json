@@ -1,0 +1,6 @@
+{
+  "name": "DeadDrop",
+  "description": "A dark fantasy exploration and treasure-hunting game with interactive maps, GPS proximity, QR/puzzle challenges, artifact collection, and player-created treasures.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

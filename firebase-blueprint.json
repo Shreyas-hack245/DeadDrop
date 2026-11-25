@@ -1,0 +1,152 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Authenticated DeadDrop explorer profile and progression stats",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Firebase Auth UID" },
+        "username": { "type": "string", "description": "Explorer display name" },
+        "title": { "type": "string", "description": "Explorer fantasy rank title" },
+        "avatarKey": { "type": "string", "description": "Bundled avatar artwork key" },
+        "xp": { "type": "integer", "description": "Total accumulated experience points" },
+        "level": { "type": "integer", "description": "Current explorer level" },
+        "goldCoins": { "type": "integer", "description": "Simulated in-game gold balance" },
+        "treasuresDiscovered": { "type": "integer", "description": "Count of unlocked treasures" },
+        "challengesCompleted": { "type": "integer", "description": "Count of solved challenges" },
+        "treasuresCreated": { "type": "integer", "description": "Count of published treasures" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp on creation" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp on update" }
+      },
+      "required": [
+        "userId", "username", "title", "avatarKey", "xp", "level",
+        "goldCoins", "treasuresDiscovered", "challengesCompleted",
+        "treasuresCreated", "createdAt", "updatedAt"
+      ]
+    },
+    "Treasure": {
+      "title": "Treasure",
+      "description": "Player-created treasure drop discoverable by explorers on the map",
+      "type": "object",
+      "properties": {
+        "creatorId": { "type": "string" },
+        "creatorName": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "category": { "type": "string", "enum": ["ANCIENT_RELIC", "ARCANE_CACHE", "URBAN_CIPHER", "SHADOW_VAULT", "MYSTIC_SHRINE"] },
+        "difficulty": { "type": "string", "enum": ["NOVICE", "ADEPT", "MASTER", "LEGENDARY"] },
+        "rarity": { "type": "string", "enum": ["COMMON", "RARE", "EPIC", "MYTHIC"] },
+        "imageKey": { "type": "string" },
+        "latitude": { "type": "number" },
+        "longitude": { "type": "number" },
+        "radiusMeters": { "type": "integer" },
+        "challengeType": { "type": "string", "enum": ["GPS_PROXIMITY", "QR_SCAN", "PUZZLE_ANSWER", "COMBINED"] },
+        "clue": { "type": "string" },
+        "hint": { "type": "string" },
+        "qrToken": { "type": "string" },
+        "puzzleAnswer": { "type": "string" },
+        "artifactName": { "type": "string" },
+        "artifactDescription": { "type": "string" },
+        "artifactImageKey": { "type": "string" },
+        "artifactRarity": { "type": "string", "enum": ["COMMON", "RARE", "EPIC", "MYTHIC"] },
+        "xpReward": { "type": "integer" },
+        "discoveryCount": { "type": "integer" },
+        "status": { "type": "string", "enum": ["ACTIVE", "ARCHIVED"] },
+        "visibility": { "type": "string", "enum": ["PUBLIC"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "creatorId", "creatorName", "name", "description", "category",
+        "difficulty", "rarity", "imageKey", "latitude", "longitude",
+        "radiusMeters", "challengeType", "clue", "artifactName",
+        "artifactDescription", "artifactImageKey", "artifactRarity",
+        "xpReward", "discoveryCount", "status", "visibility",
+        "createdAt", "updatedAt"
+      ]
+    },
+    "CollectedArtifact": {
+      "title": "CollectedArtifact",
+      "description": "Artifact claimed into a player's vault collection",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "treasureId": { "type": "string" },
+        "treasureName": { "type": "string" },
+        "artifactName": { "type": "string" },
+        "artifactDescription": { "type": "string" },
+        "rarity": { "type": "string", "enum": ["COMMON", "RARE", "EPIC", "MYTHIC"] },
+        "imageKey": { "type": "string" },
+        "xpEarned": { "type": "integer" },
+        "discoveryMethod": { "type": "string", "enum": ["GPS", "QR", "PUZZLE", "COMBINED", "MARKETPLACE", "DEMO_SIMULATION"] },
+        "discoveredAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "userId", "treasureId", "treasureName", "artifactName",
+        "artifactDescription", "rarity", "imageKey", "xpEarned",
+        "discoveryMethod", "discoveredAt", "updatedAt"
+      ]
+    },
+    "ActivityEntry": {
+      "title": "ActivityEntry",
+      "description": "Chronological player activity log entry",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "subtitle": { "type": "string" },
+        "xpDelta": { "type": "integer" },
+        "type": { "type": "string", "enum": ["DISCOVERED", "CREATED", "PURCHASED", "LISTED"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "title", "subtitle", "xpDelta", "type", "createdAt"]
+    },
+    "MarketplaceListing": {
+      "title": "MarketplaceListing",
+      "description": "Simulated relic exchange listing using in-game gold",
+      "type": "object",
+      "properties": {
+        "sellerId": { "type": "string" },
+        "sellerName": { "type": "string" },
+        "artifactName": { "type": "string" },
+        "artifactDescription": { "type": "string" },
+        "rarity": { "type": "string", "enum": ["COMMON", "RARE", "EPIC", "MYTHIC"] },
+        "imageKey": { "type": "string" },
+        "priceGold": { "type": "integer" },
+        "category": { "type": "string", "enum": ["FEATURED", "POPULAR", "NEW"] },
+        "status": { "type": "string", "enum": ["AVAILABLE", "SOLD"] },
+        "visibility": { "type": "string", "enum": ["PUBLIC"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "sellerId", "sellerName", "artifactName", "artifactDescription",
+        "rarity", "imageKey", "priceGold", "category", "status",
+        "visibility", "createdAt", "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Explorer profile documents owned by the authenticated user"
+    },
+    "/treasures/{treasureId}": {
+      "schema": { "$ref": "#/entities/Treasure" },
+      "description": "Publicly discoverable treasure drops published by players"
+    },
+    "/users/{userId}/artifacts/{artifactId}": {
+      "schema": { "$ref": "#/entities/CollectedArtifact" },
+      "description": "Player's collected artifact vault"
+    },
+    "/users/{userId}/activity/{activityId}": {
+      "schema": { "$ref": "#/entities/ActivityEntry" },
+      "description": "Player's expedition and exchange activity log"
+    },
+    "/marketplace_listings/{listingId}": {
+      "schema": { "$ref": "#/entities/MarketplaceListing" },
+      "description": "Simulated relic exchange listings across explorers"
+    }
+  }
+}

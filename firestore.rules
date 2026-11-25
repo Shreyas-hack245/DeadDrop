@@ -1,0 +1,237 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidRarity(val) {
+      return val is string && val in ['COMMON', 'RARE', 'EPIC', 'MYTHIC'];
+    }
+
+    function isValidCategory(val) {
+      return val is string && val in ['ANCIENT_RELIC', 'ARCANE_CACHE', 'URBAN_CIPHER', 'SHADOW_VAULT', 'MYSTIC_SHRINE'];
+    }
+
+    function isValidDifficulty(val) {
+      return val is string && val in ['NOVICE', 'ADEPT', 'MASTER', 'LEGENDARY'];
+    }
+
+    function isValidChallengeType(val) {
+      return val is string && val in ['GPS_PROXIMITY', 'QR_SCAN', 'PUZZLE_ANSWER', 'COMBINED'];
+    }
+
+    function isValidUserProfile(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.username is string && data.username.size() >= 2 && data.username.size() <= 40 &&
+             data.title is string && data.title.size() >= 2 && data.title.size() <= 40 &&
+             data.avatarKey is string && data.avatarKey.size() >= 1 && data.avatarKey.size() <= 40 &&
+             data.xp is int && data.xp >= 0 && data.xp <= 10000000 &&
+             data.level is int && data.level >= 1 && data.level <= 999 &&
+             data.goldCoins is int && data.goldCoins >= 0 && data.goldCoins <= 10000000 &&
+             data.treasuresDiscovered is int && data.treasuresDiscovered >= 0 &&
+             data.challengesCompleted is int && data.challengesCompleted >= 0 &&
+             data.treasuresCreated is int && data.treasuresCreated >= 0 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidTreasure(data) {
+      return data.creatorId is string && data.creatorId.size() >= 1 && data.creatorId.size() <= 128 &&
+             data.creatorName is string && data.creatorName.size() >= 1 && data.creatorName.size() <= 40 &&
+             data.name is string && data.name.size() >= 2 && data.name.size() <= 80 &&
+             data.description is string && data.description.size() >= 5 && data.description.size() <= 500 &&
+             isValidCategory(data.category) &&
+             isValidDifficulty(data.difficulty) &&
+             isValidRarity(data.rarity) &&
+             data.imageKey is string && data.imageKey.size() >= 1 && data.imageKey.size() <= 60 &&
+             data.latitude is number && data.latitude >= -90.0 && data.latitude <= 90.0 &&
+             data.longitude is number && data.longitude >= -180.0 && data.longitude <= 180.0 &&
+             data.radiusMeters is int && data.radiusMeters >= 10 && data.radiusMeters <= 1000 &&
+             isValidChallengeType(data.challengeType) &&
+             data.clue is string && data.clue.size() >= 3 && data.clue.size() <= 350 &&
+             (!('hint' in data) || (data.hint is string && data.hint.size() <= 250)) &&
+             (!('qrToken' in data) || (data.qrToken is string && data.qrToken.size() <= 120)) &&
+             (!('puzzleAnswer' in data) || (data.puzzleAnswer is string && data.puzzleAnswer.size() <= 120)) &&
+             data.artifactName is string && data.artifactName.size() >= 2 && data.artifactName.size() <= 80 &&
+             data.artifactDescription is string && data.artifactDescription.size() >= 5 && data.artifactDescription.size() <= 350 &&
+             data.artifactImageKey is string && data.artifactImageKey.size() >= 1 && data.artifactImageKey.size() <= 60 &&
+             isValidRarity(data.artifactRarity) &&
+             data.xpReward is int && data.xpReward >= 25 && data.xpReward <= 10000 &&
+             data.discoveryCount is int && data.discoveryCount >= 0 &&
+             data.status is string && data.status in ['ACTIVE', 'ARCHIVED'] &&
+             data.visibility is string && data.visibility == 'PUBLIC' &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidCollectedArtifact(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.treasureId is string && data.treasureId.size() >= 1 && data.treasureId.size() <= 128 &&
+             data.treasureName is string && data.treasureName.size() >= 2 && data.treasureName.size() <= 80 &&
+             data.artifactName is string && data.artifactName.size() >= 2 && data.artifactName.size() <= 80 &&
+             data.artifactDescription is string && data.artifactDescription.size() >= 5 && data.artifactDescription.size() <= 350 &&
+             isValidRarity(data.rarity) &&
+             data.imageKey is string && data.imageKey.size() >= 1 && data.imageKey.size() <= 60 &&
+             data.xpEarned is int && data.xpEarned >= 0 && data.xpEarned <= 10000 &&
+             data.discoveryMethod is string && data.discoveryMethod in ['GPS', 'QR', 'PUZZLE', 'COMBINED', 'MARKETPLACE', 'DEMO_SIMULATION'] &&
+             data.discoveredAt is timestamp && data.discoveredAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidActivityEntry(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.title is string && data.title.size() >= 2 && data.title.size() <= 100 &&
+             data.subtitle is string && data.subtitle.size() >= 1 && data.subtitle.size() <= 180 &&
+             data.xpDelta is int && data.xpDelta >= 0 && data.xpDelta <= 10000 &&
+             data.type is string && data.type in ['DISCOVERED', 'CREATED', 'PURCHASED', 'LISTED'] &&
+             data.createdAt is timestamp && data.createdAt <= request.time;
+    }
+
+    function isValidListing(data) {
+      return data.sellerId is string && data.sellerId.size() >= 1 && data.sellerId.size() <= 128 &&
+             data.sellerName is string && data.sellerName.size() >= 1 && data.sellerName.size() <= 40 &&
+             data.artifactName is string && data.artifactName.size() >= 2 && data.artifactName.size() <= 80 &&
+             data.artifactDescription is string && data.artifactDescription.size() >= 5 && data.artifactDescription.size() <= 350 &&
+             isValidRarity(data.rarity) &&
+             data.imageKey is string && data.imageKey.size() >= 1 && data.imageKey.size() <= 60 &&
+             data.priceGold is int && data.priceGold >= 10 && data.priceGold <= 100000 &&
+             data.category is string && data.category in ['FEATURED', 'POPULAR', 'NEW'] &&
+             data.status is string && data.status in ['AVAILABLE', 'SOLD'] &&
+             data.visibility is string && data.visibility == 'PUBLIC' &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    match /users/{userId} {
+      allow get, list: if isOwner(userId);
+
+      allow create: if isOwner(userId) &&
+                       isValidId(userId) &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().keys().hasAll(['userId', 'username', 'title', 'avatarKey', 'xp', 'level', 'goldCoins', 'treasuresDiscovered', 'challengesCompleted', 'treasuresCreated', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'username', 'title', 'avatarKey', 'xp', 'level', 'goldCoins', 'treasuresDiscovered', 'challengesCompleted', 'treasuresCreated', 'createdAt', 'updatedAt']) &&
+                       isValidUserProfile(incoming());
+
+      allow update: if isOwner(userId) &&
+                       isValidId(userId) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       isValidUserProfile(incoming()) &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['username', 'title', 'avatarKey', 'xp', 'level', 'goldCoins', 'treasuresDiscovered', 'challengesCompleted', 'treasuresCreated', 'updatedAt']);
+
+      allow delete: if isOwner(userId) && isValidId(userId);
+
+      match /artifacts/{artifactId} {
+        allow get, list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(artifactId) &&
+                         incoming().userId == request.auth.uid &&
+                         incoming().keys().hasAll(['userId', 'treasureId', 'treasureName', 'artifactName', 'artifactDescription', 'rarity', 'imageKey', 'xpEarned', 'discoveryMethod', 'discoveredAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['userId', 'treasureId', 'treasureName', 'artifactName', 'artifactDescription', 'rarity', 'imageKey', 'xpEarned', 'discoveryMethod', 'discoveredAt', 'updatedAt']) &&
+                         isValidCollectedArtifact(incoming());
+
+        allow update: if isOwner(userId) &&
+                         isValidId(artifactId) &&
+                         incoming().userId == existing().userId &&
+                         incoming().discoveredAt == existing().discoveredAt &&
+                         isValidCollectedArtifact(incoming()) &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['updatedAt']);
+
+        allow delete: if isOwner(userId) && isValidId(artifactId);
+      }
+
+      match /activity/{activityId} {
+        allow get, list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(activityId) &&
+                         incoming().userId == request.auth.uid &&
+                         incoming().keys().hasAll(['userId', 'title', 'subtitle', 'xpDelta', 'type', 'createdAt']) &&
+                         incoming().keys().hasOnly(['userId', 'title', 'subtitle', 'xpDelta', 'type', 'createdAt']) &&
+                         isValidActivityEntry(incoming());
+
+        allow update: if false;
+        allow delete: if isOwner(userId) && isValidId(activityId);
+      }
+    }
+
+    match /treasures/{treasureId} {
+      allow get, list: if isSignedIn() && resource.data.visibility == 'PUBLIC';
+
+      allow create: if isSignedIn() &&
+                       isValidId(treasureId) &&
+                       incoming().creatorId == request.auth.uid &&
+                       incoming().discoveryCount == 0 &&
+                       incoming().status == 'ACTIVE' &&
+                       incoming().visibility == 'PUBLIC' &&
+                       incoming().keys().hasAll(['creatorId', 'creatorName', 'name', 'description', 'category', 'difficulty', 'rarity', 'imageKey', 'latitude', 'longitude', 'radiusMeters', 'challengeType', 'clue', 'artifactName', 'artifactDescription', 'artifactImageKey', 'artifactRarity', 'xpReward', 'discoveryCount', 'status', 'visibility', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['creatorId', 'creatorName', 'name', 'description', 'category', 'difficulty', 'rarity', 'imageKey', 'latitude', 'longitude', 'radiusMeters', 'challengeType', 'clue', 'hint', 'qrToken', 'puzzleAnswer', 'artifactName', 'artifactDescription', 'artifactImageKey', 'artifactRarity', 'xpReward', 'discoveryCount', 'status', 'visibility', 'createdAt', 'updatedAt']) &&
+                       isValidTreasure(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(treasureId) &&
+                       isValidTreasure(incoming()) &&
+                       incoming().creatorId == existing().creatorId &&
+                       incoming().createdAt == existing().createdAt && (
+                         (existing().creatorId == request.auth.uid &&
+                          incoming().diff(existing()).affectedKeys().hasOnly(['name', 'description', 'category', 'difficulty', 'rarity', 'imageKey', 'latitude', 'longitude', 'radiusMeters', 'challengeType', 'clue', 'hint', 'qrToken', 'puzzleAnswer', 'artifactName', 'artifactDescription', 'artifactImageKey', 'artifactRarity', 'xpReward', 'status', 'updatedAt'])) ||
+                         (existing().status == 'ACTIVE' &&
+                          incoming().discoveryCount == existing().discoveryCount + 1 &&
+                          incoming().diff(existing()).affectedKeys().hasOnly(['discoveryCount', 'updatedAt']))
+                       );
+
+      allow delete: if isSignedIn() && isValidId(treasureId) && existing().creatorId == request.auth.uid;
+    }
+
+    match /marketplace_listings/{listingId} {
+      allow get, list: if isSignedIn() && resource.data.visibility == 'PUBLIC';
+
+      allow create: if isSignedIn() &&
+                       isValidId(listingId) &&
+                       incoming().sellerId == request.auth.uid &&
+                       incoming().status == 'AVAILABLE' &&
+                       incoming().visibility == 'PUBLIC' &&
+                       incoming().keys().hasAll(['sellerId', 'sellerName', 'artifactName', 'artifactDescription', 'rarity', 'imageKey', 'priceGold', 'category', 'status', 'visibility', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['sellerId', 'sellerName', 'artifactName', 'artifactDescription', 'rarity', 'imageKey', 'priceGold', 'category', 'status', 'visibility', 'createdAt', 'updatedAt']) &&
+                       isValidListing(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(listingId) &&
+                       isValidListing(incoming()) &&
+                       existing().status == 'AVAILABLE' &&
+                       incoming().sellerId == existing().sellerId &&
+                       incoming().createdAt == existing().createdAt && (
+                         (existing().sellerId == request.auth.uid &&
+                          incoming().diff(existing()).affectedKeys().hasOnly(['priceGold', 'status', 'updatedAt'])) ||
+                         (incoming().status == 'SOLD' &&
+                          incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']))
+                       );
+
+      allow delete: if isSignedIn() && isValidId(listingId) && existing().sellerId == request.auth.uid;
+    }
+  }
+}
