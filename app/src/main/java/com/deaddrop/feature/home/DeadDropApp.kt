@@ -1,160 +1,147 @@
 package com.deaddrop.feature.home
 
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.tween
-import androidx.navigation.compose.composable
-import androidx.compose.animation.core.animateFloat
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.getValue
-import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.*
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
+import androidx.navigation.compose.rememberNavController
 import com.deaddrop.core.theme.*
 import com.deaddrop.data.model.Treasure
-import com.deaddrop.data.repository.DemoTreasureRepository
 
-private val repo = DemoTreasureRepository()
 private enum class Page { MAP, COLLECTION, MARKET, PROFILE, DETAIL, HUNT, SCAN, PUZZLE, REWARD, WALLET, HISTORY, AUTH }
 
 @Composable
 fun DeadDropApp() {
-    val navController = androidx.navigation.compose.rememberNavController()
-    val viewModel: DeadDropViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+    val navController=rememberNavController()
+    val viewModel:DeadDropViewModel=androidx.lifecycle.viewmodel.compose.viewModel()
     val treasures by viewModel.treasures.collectAsState()
     val entry by navController.currentBackStackEntryAsState()
-    val route = entry?.destination?.route ?: "map"
+    val route=entry?.destination?.route ?: "onboarding"
     var selected by remember { mutableStateOf(treasures.first()) }
     var answer by remember { mutableStateOf("") }
-    val isDemo = true
+    val isDemo=true
     var toast by remember { mutableStateOf<String?>(null) }
-    val snackbar = remember { SnackbarHostState() }
-    LaunchedEffect(toast) { toast?.let { snackbar.showSnackbar(it); toast = null } }
-    fun open(route: String) { navController.navigate(route) { launchSingleTop = true } }
+    val snackbar=remember { SnackbarHostState() }
+    LaunchedEffect(toast){toast?.let{snackbar.showSnackbar(it);toast=null}}
+    fun open(route:String){navController.navigate(route){launchSingleTop=true}}
 
-    Scaffold(containerColor = Ink, snackbarHost = { SnackbarHost(snackbar) }, bottomBar = {
-        val selectedTab = when (route) { "collection" -> Page.COLLECTION; "market" -> Page.MARKET; "profile" -> Page.PROFILE; else -> Page.MAP }
-        if (route in listOf("map", "collection", "market", "profile")) BottomBar(selectedTab) { target ->
-            val targetRoute = when(target) { Page.MAP -> "map"; Page.COLLECTION -> "collection"; Page.MARKET -> "market"; else -> "profile" }
-            navController.navigate(targetRoute) { popUpTo("map") { saveState = true }; launchSingleTop = true; restoreState = true }
+    Scaffold(containerColor=Ink,snackbarHost={SnackbarHost(snackbar,snackbar={data->Snackbar(data,containerColor=TextPrimary,contentColor=Panel)})} ,bottomBar={
+        val selectedTab=when(route){"collection"->Page.COLLECTION;"market"->Page.MARKET;"profile"->Page.PROFILE;else->Page.MAP}
+        if(route in listOf("map","collection","market","profile")) PremiumBottomBar(selectedTab){target->
+            val dest=when(target){Page.MAP->"map";Page.COLLECTION->"collection";Page.MARKET->"market";else->"profile"}
+            navController.navigate(dest){popUpTo("map"){saveState=true};launchSingleTop=true;restoreState=true}
         }
-    }) { padding ->
-        androidx.navigation.compose.NavHost(navController = navController, startDestination = "onboarding", modifier = Modifier.fillMaxSize()) {
-            composable("onboarding") { OnboardingScreen(onStart = { open("map") }, onSignIn = { open("auth") }) }
-            composable("map") { HomeScreen(treasures, padding, onSelect = { selected = it; open("detail") }, onProfile = { open("profile") }) }
-            composable("collection") { CollectionScreen(treasures.filter { it.unlocked }, padding, onOpen = { selected = it; open("reward") }, onMarket = { open("market") }) }
-            composable("market") { MarketScreen(padding, onWallet = { open("wallet") }, onToast = { toast = it }) }
-            composable("profile") { ProfileScreen(padding, isDemo, onWallet = { open("wallet") }, onHistory = { open("history") }, onAuth = { open("auth") }, onMode = { toast = "Live services are not configured; demo mode stays on" }) }
-            composable("detail") { DetailScreen(selected, onBack = { navController.popBackStack() }, onStart = { open("hunt") }) }
-            composable("hunt") { HuntScreen(selected, onBack = { navController.popBackStack() }, onScan = { open("scan") }) }
-            composable("scan") { ScanScreen(selected, onBack = { navController.popBackStack() }, onPuzzle = { open("puzzle") }) }
-            composable("puzzle") { PuzzleScreen(selected, answer, { answer = it }, onBack = { navController.popBackStack() }, onWin = { viewModel.unlock(selected.id); open("reward") }) }
-            composable("reward") { RewardScreen(selected, onCollection = { open("collection") }, onMap = { navController.navigate("map") { popUpTo("map") { inclusive = false }; launchSingleTop = true } }) }
-            composable("wallet") { WalletScreen(isDemo, onBack = { navController.popBackStack() }, onToast = { toast = it }) }
-            composable("history") { HistoryScreen(onBack = { navController.popBackStack() }) }
-            composable("auth") { AuthScreen(onBack = { navController.popBackStack() }, onContinue = { navController.popBackStack(); toast = "Continuing with the local demo profile" }) }
+    }){padding->
+        androidx.navigation.compose.NavHost(navController=navController,startDestination="onboarding",modifier=Modifier.fillMaxSize()){
+            composable("onboarding"){OnboardingScreen(onStart={open("map")},onSignIn={open("auth")})}
+            composable("map"){HomeScreen(treasures,padding,onSelect={selected=it;open("detail")},onProfile={open("profile")})}
+            composable("collection"){CollectionScreen(treasures.filter{it.unlocked},padding,onOpen={selected=it;open("artifact")},onMarket={open("market")})}
+            composable("artifact"){ArtifactDetailScreen(selected,onBack={navController.popBackStack()},onMarket={open("market")})}
+            composable("market"){MarketScreen(padding,onWallet={open("wallet")},onToast={toast=it})}
+            composable("profile"){ProfileScreen(padding,isDemo,onWallet={open("wallet")},onHistory={open("history")},onAuth={open("auth")},onMode={toast="Live services are not configured; demo mode stays on"})}
+            composable("detail"){DetailScreen(selected,onBack={navController.popBackStack()},onStart={open("hunt")})}
+            composable("hunt"){HuntScreen(selected,onBack={navController.popBackStack()},onScan={open("scan")})}
+            composable("scan"){ScanScreen(selected,onBack={navController.popBackStack()},onPuzzle={open("puzzle")})}
+            composable("puzzle"){PuzzleScreen(selected,answer,{answer=it},onBack={navController.popBackStack()},onWin={viewModel.unlock(selected.id);open("reward")})}
+            composable("reward"){RewardScreen(selected,onCollection={open("collection")},onMap={navController.navigate("map"){popUpTo("map"){inclusive=false};launchSingleTop=true}})}
+            composable("wallet"){WalletScreen(isDemo,onBack={navController.popBackStack()},onToast={toast=it})}
+            composable("history"){HistoryScreen(onBack={navController.popBackStack()})}
+            composable("auth"){AuthScreen(onBack={navController.popBackStack()},onContinue={navController.popBackStack();toast="Continuing with the local demo profile"})}
         }
     }
 }
 
-@Composable
-private fun HomeScreen(treasures: List<Treasure>, padding: PaddingValues, onSelect: (Treasure) -> Unit, onProfile: () -> Unit) {
-    Column(Modifier.fillMaxSize().padding(bottom = padding.calculateBottomPadding())) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) { Text("DEADDROP", color = Cyan, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.6.sp); Text("Good evening, Alex", color = TextPrimary, fontSize = 22.sp, fontWeight = FontWeight.SemiBold) }
-            IconButton(onClick = onProfile, modifier = Modifier.size(44.dp).clip(CircleShape).background(Panel)) { Icon(Icons.Default.Person, null, tint = Violet) }
+@Composable private fun HomeScreen(treasures:List<Treasure>,padding:PaddingValues,onSelect:(Treasure)->Unit,onProfile:()->Unit){
+    var query by remember{mutableStateOf("")}
+    val visible=treasures.filter{it.name.contains(query,true)||it.category.contains(query,true)}
+    Column(Modifier.fillMaxSize().background(Ink).padding(bottom=padding.calculateBottomPadding()).verticalScroll(rememberScrollState())){
+        Row(Modifier.fillMaxWidth().padding(horizontal=24.dp,vertical=13.dp),verticalAlignment=Alignment.CenterVertically){
+            Column(Modifier.weight(1f)){Text("Explore",style=MaterialTheme.typography.titleLarge,color=TextPrimary);Text("SAN FRANCISCO  ·  DEMO MAP",color=Muted,fontSize=9.sp,fontWeight=FontWeight.SemiBold,letterSpacing=1.sp)}
+            IconButton(onClick=onProfile,modifier=Modifier.size(42.dp).clip(CircleShape).background(Panel).border(1.dp,Border,CircleShape)){Icon(Icons.Default.PersonOutline,"Profile",tint=Forest)}
         }
-        Row(Modifier.padding(horizontal = 22.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("SAN FRANCISCO", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.8.sp, modifier = Modifier.weight(1f))
-            Icon(Icons.Default.MyLocation, null, tint = Cyan, modifier = Modifier.size(14.dp)); Spacer(Modifier.width(5.dp)); Text("DEMO MAP", color = Cyan, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+        Row(Modifier.padding(start=24.dp,end=24.dp,bottom=12.dp),verticalAlignment=Alignment.Bottom){Text("A little farther.\nA little wonder.",style=MaterialTheme.typography.headlineMedium,color=TextPrimary,modifier=Modifier.weight(1f));Text("03\nNEARBY",color=Muted,fontSize=9.sp,lineHeight=15.sp,fontWeight=FontWeight.SemiBold,textAlign=androidx.compose.ui.text.style.TextAlign.End)}
+        Row(Modifier.padding(horizontal=24.dp).fillMaxWidth().height(48.dp).clip(RoundedCornerShape(13.dp)).background(Panel).border(1.dp,Border,RoundedCornerShape(13.dp)).padding(horizontal=14.dp),verticalAlignment=Alignment.CenterVertically){Icon(Icons.Default.Search,null,tint=Muted,modifier=Modifier.size(19.dp));Spacer(Modifier.width(10.dp));BasicTextField(query,{query=it},modifier=Modifier.weight(1f),singleLine=true,textStyle=MaterialTheme.typography.bodyMedium.copy(color=TextPrimary),decorationBox={inner->Box{if(query.isEmpty())Text("Search treasures",color=Muted,fontSize=13.sp);inner()}});if(query.isNotEmpty())IconButton(onClick={query=""},modifier=Modifier.size(30.dp)){Icon(Icons.Default.Close,"Clear search",tint=Muted,modifier=Modifier.size(17.dp))}}
+        Spacer(Modifier.height(13.dp))
+        Box(Modifier.fillMaxWidth().height(300.dp).padding(horizontal=16.dp).clip(RoundedCornerShape(20.dp)).border(1.dp,Border,RoundedCornerShape(20.dp))){
+            TreasureMap(treasures,Modifier.fillMaxSize(),onSelect)
+            Chip("DEMO MAP",Panel.copy(alpha=.92f),Cyan)
+            Box(Modifier.align(Alignment.BottomStart).padding(13.dp).clip(RoundedCornerShape(10.dp)).background(Panel.copy(alpha=.94f)).padding(horizontal=11.dp,vertical=8.dp)){Row(verticalAlignment=Alignment.CenterVertically){Box(Modifier.size(7.dp).background(Cyan,CircleShape));Spacer(Modifier.width(7.dp));Text("Sample locations · San Francisco",color=TextPrimary,fontSize=10.sp,fontWeight=FontWeight.Medium)}}
         }
-        Box(Modifier.fillMaxWidth().weight(1f).padding(horizontal = 14.dp, vertical = 12.dp).clip(RoundedCornerShape(28.dp))) {
-            TreasureMap(treasures, Modifier.fillMaxSize(), onSelect)
-            Column(Modifier.align(Alignment.TopStart).padding(15.dp)) { Chip("✦  3 SIGNALS NEARBY", Cyan.copy(alpha=.12f), Cyan) }
-            Card(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(12.dp), shape=RoundedCornerShape(22.dp), colors=CardDefaults.cardColors(containerColor = Panel.copy(alpha=.96f))) {
-                Row(Modifier.fillMaxWidth().clickable { treasures.firstOrNull()?.let(onSelect) }.padding(16.dp), verticalAlignment=Alignment.CenterVertically) {
-                    Box(Modifier.size(44.dp).clip(RoundedCornerShape(15.dp)).background(Violet.copy(alpha=.16f)), contentAlignment=Alignment.Center) { Text("🌙", fontSize=21.sp) }
-                    Spacer(Modifier.width(12.dp)); Column(Modifier.weight(1f)) { Text("THE MOONWELL CACHE", color=TextPrimary, fontSize=11.sp, fontWeight=FontWeight.Bold, letterSpacing=1.sp); Spacer(Modifier.height(4.dp)); Text("Epic relic  ·  0.8 km away", color=Muted, fontSize=12.sp) }
-                    Icon(Icons.Default.ArrowForward, null, tint=Cyan)
-                }
-            }
-        }
-        Row(Modifier.padding(horizontal=22.dp, vertical=5.dp), verticalAlignment=Alignment.CenterVertically) { Text("Nearby signals", color=TextPrimary, fontSize=16.sp, fontWeight=FontWeight.SemiBold, modifier=Modifier.weight(1f)); Text("OPEN SIGNAL", color=Violet, fontSize=10.sp, fontWeight=FontWeight.Bold, modifier=Modifier.clickable { treasures.firstOrNull()?.let(onSelect) }) }
-        Row(Modifier.fillMaxWidth().height(108.dp).padding(start=16.dp, end=16.dp, top=8.dp, bottom=12.dp)) {
-            treasures.take(3).forEach { t -> SmallTreasureCard(t, Modifier.weight(1f).padding(horizontal=5.dp), onSelect) }
+        Row(Modifier.fillMaxWidth().padding(start=24.dp,end=24.dp,top=18.dp,bottom=9.dp),verticalAlignment=Alignment.CenterVertically){Text(if(query.isBlank())"Nearby discoveries" else "Search results",style=MaterialTheme.typography.titleMedium,color=TextPrimary,modifier=Modifier.weight(1f));Text("${visible.size.toString().padStart(2,'0')} PLACES",color=Muted,fontSize=9.sp,fontWeight=FontWeight.SemiBold,letterSpacing=.7.sp)}
+        if(visible.isEmpty()) Box(Modifier.fillMaxWidth().weight(1f),contentAlignment=Alignment.Center){Text("No discoveries match that search.",color=Muted,fontSize=13.sp)}
+        else LazyRow(contentPadding=PaddingValues(start=19.dp,end=19.dp,bottom=12.dp),horizontalArrangement=Arrangement.spacedBy(10.dp)){
+            items(visible,key={it.id}){treasure->DiscoveryCard(treasure,Modifier.width(244.dp),onClick={onSelect(treasure)})}
         }
     }
 }
 
-@Composable
-private fun TreasureMap(treasures: List<Treasure>, modifier: Modifier = Modifier, onSelect: (Treasure) -> Unit) {
-    BoxWithConstraints(modifier.background(Color(0xFF10192A))) {
-        Canvas(Modifier.fillMaxSize()) {
-            val w=size.width; val h=size.height
-            drawRect(brush=Brush.linearGradient(listOf(Color(0xFF111C2D),Color(0xFF172438),Color(0xFF101A28)), Offset.Zero, Offset(w,h)))
-            // soft park shapes and street grid
-            val parks=listOf(Triple(.15f,.19f,.2f),Triple(.79f,.29f,.21f),Triple(.2f,.73f,.24f),Triple(.82f,.79f,.25f))
-            parks.forEach { (x,y,r) -> drawCircle(Color(0xFF1C3B3A).copy(alpha=.55f), size.minDimension*r, Offset(w*x,h*y)) }
-            val street=Color(0xFF637083).copy(alpha=.26f)
-            for (i in 0..8) { val x=w*i/8f; drawLine(street,Offset(x,-30f),Offset(x+70f,h+30),4.dp.toPx()) }
-            for (i in 0..10) { val y=h*i/10f; drawLine(street,Offset(-30f,y),Offset(w+30f,y-36f),3.dp.toPx()) }
-            drawLine(Color(0xFF356B83).copy(alpha=.54f),Offset(w*.08f,h*.65f),Offset(w*.9f,h*.47f),14.dp.toPx())
-            drawLine(Color(0xFF284F68).copy(alpha=.45f),Offset(w*.08f,h*.65f),Offset(w*.9f,h*.47f),7.dp.toPx())
-            // faint map labels
-            val p=android.graphics.Paint().apply { color=android.graphics.Color.argb(100,180,195,211); textSize=10.dp.toPx(); letterSpacing=2f }
-            drawContext.canvas.nativeCanvas.drawText("NORTH BEACH",w*.1f,h*.36f,p)
-            drawContext.canvas.nativeCanvas.drawText("PACIFIC HEIGHTS",w*.55f,h*.22f,p)
-            drawContext.canvas.nativeCanvas.drawText("THE EMBARCADERO",w*.25f,h*.88f,p)
+@Composable private fun TreasureMap(treasures:List<Treasure>,modifier:Modifier=Modifier,onSelect:(Treasure)->Unit){
+    BoxWithConstraints(modifier.background(Color(0xFF101326))){
+        Canvas(Modifier.fillMaxSize()){
+            drawRect(Brush.verticalGradient(listOf(Color(0xFF18203C),Color(0xFF101326),Color(0xFF17142C))))
+            val green=Color(0xFF202B3B)
+            listOf(Triple(.14f,.2f,.22f),Triple(.82f,.24f,.2f),Triple(.17f,.77f,.25f),Triple(.86f,.76f,.22f)).forEach{(x,y,r)->drawCircle(green,size.minDimension*r,Offset(size.width*x,size.height*y))}
+            val road=Color(0xFF34344C)
+            for(i in 0..7){val x=size.width*i/7f;drawLine(road,Offset(x,-20f),Offset(x+55f,size.height+20f),5.dp.toPx())}
+            for(i in 0..8){val y=size.height*i/8f;drawLine(road,Offset(-20f,y),Offset(size.width+20f,y-25f),4.dp.toPx())}
+            val water=Color(0xFF304C6B)
+            val path=androidx.compose.ui.graphics.Path().apply{moveTo(size.width*.02f,size.height*.72f);cubicTo(size.width*.25f,size.height*.51f,size.width*.46f,size.height*.85f,size.width*.72f,size.height*.56f);cubicTo(size.width*.83f,size.height*.43f,size.width*.9f,size.height*.53f,size.width*1.03f,size.height*.41f)}
+            drawPath(path,water,style=Stroke(width=12.dp.toPx(),cap=androidx.compose.ui.graphics.StrokeCap.Round))
+            val p=android.graphics.Paint().apply{color=android.graphics.Color.rgb(177,182,208);textSize=10.dp.toPx();letterSpacing=1.1f}
+            drawContext.canvas.nativeCanvas.drawText("NORTH BEACH",size.width*.08f,size.height*.38f,p)
+            drawContext.canvas.nativeCanvas.drawText("PACIFIC HEIGHTS",size.width*.57f,size.height*.27f,p)
+            drawContext.canvas.nativeCanvas.drawText("THE EMBARCADERO",size.width*.27f,size.height*.88f,p)
         }
-        val points=listOf(Triple(.32f,.28f,treasures.getOrNull(0)),Triple(.73f,.43f,treasures.getOrNull(1)),Triple(.49f,.68f,treasures.getOrNull(2)))
-        points.forEachIndexed { index, (x,y,t) -> if(t!=null) {
-            val pulse by rememberInfiniteTransition(label="signal$index").animateFloat(0f,1f, infiniteRepeatable(tween(1900,delayMillis=index*300),RepeatMode.Restart),label="pulse")
-            Box(Modifier.offset(maxWidth*x-22.dp,maxHeight*y-24.dp).size(50.dp).clickable { onSelect(t) },contentAlignment=Alignment.Center) {
-                Canvas(Modifier.fillMaxSize()) { drawCircle(Cyan.copy(alpha=.08f*(1-pulse)),size.minDimension*.5f,style=Stroke(2.dp.toPx())); drawCircle(Violet.copy(alpha=.12f*(1-pulse)),size.minDimension*(.34f+.1f*pulse),style=Stroke(1.dp.toPx())) }
-                Box(Modifier.size(33.dp).border(1.dp,Cyan.copy(alpha=.8f),CircleShape).background(Panel,CircleShape),contentAlignment=Alignment.Center){Text(t.emoji,fontSize=16.sp)}
-            }
-        } }
-        Box(Modifier.align(Alignment.Center).offset((-12).dp,20.dp).size(16.dp).border(2.dp,Color.White.copy(alpha=.7f),CircleShape).background(Cyan,CircleShape))
-        Box(Modifier.align(Alignment.BottomStart).padding(16.dp).clip(RoundedCornerShape(8.dp)).background(Color.Black.copy(alpha=.32f)).padding(horizontal=9.dp,vertical=5.dp)){Text("MAP DATA · DEMO",color=Muted,fontSize=9.sp,letterSpacing=1.sp)}
+        val points=listOf(Triple(.32f,.30f,treasures.getOrNull(0)),Triple(.73f,.43f,treasures.getOrNull(1)),Triple(.49f,.68f,treasures.getOrNull(2)))
+        points.forEach{(x,y,item)->if(item!=null){
+            Box(Modifier.offset(maxWidth*x-21.dp,maxHeight*y-21.dp).size(42.dp).clip(CircleShape).background(Forest.copy(alpha=.18f)).border(1.dp,Violet.copy(alpha=.8f),CircleShape).clickable{onSelect(item)},contentAlignment=Alignment.Center){Box(Modifier.size(24.dp).clip(CircleShape).background(Violet),contentAlignment=Alignment.Center){Canvas(Modifier.size(12.dp)){drawCircle(Color.White);drawCircle(Violet,size.minDimension*.23f,Offset(size.width*.38f,size.height*.36f))}}}
+        }}
+        Box(Modifier.align(Alignment.Center).offset(9.dp,19.dp).size(15.dp).clip(CircleShape).background(Cyan).border(2.dp,Color.White,CircleShape))
     }
 }
 
-@Composable
-private fun SmallTreasureCard(t: Treasure, modifier: Modifier, onClick: (Treasure)->Unit) {
-    Card(modifier.fillMaxHeight().clickable { onClick(t) }, shape=RoundedCornerShape(17.dp), colors=CardDefaults.cardColors(containerColor=Panel)) {
-        Row(Modifier.fillMaxSize().padding(10.dp), verticalAlignment=Alignment.CenterVertically) { Text(t.emoji,fontSize=21.sp); Spacer(Modifier.width(8.dp)); Column { Text(t.name.substringBefore(" "),color=TextPrimary,fontSize=11.sp,fontWeight=FontWeight.SemiBold,maxLines=1,overflow=TextOverflow.Ellipsis); Text(t.distance,color=Muted,fontSize=10.sp) } }
+@Composable private fun DiscoveryCard(t:Treasure,modifier:Modifier=Modifier,onClick:()->Unit){
+    Row(modifier.height(86.dp).clip(RoundedCornerShape(15.dp)).background(Panel).border(1.dp,Border,RoundedCornerShape(15.dp)).clickable(onClick=onClick).padding(9.dp),verticalAlignment=Alignment.CenterVertically){
+        CollectibleArtwork(t.id,Modifier.size(66.dp));Spacer(Modifier.width(12.dp));Column(Modifier.weight(1f)){
+            Text(t.name,color=TextPrimary,fontSize=13.sp,fontWeight=FontWeight.SemiBold,maxLines=1,overflow=TextOverflow.Ellipsis)
+            Spacer(Modifier.height(4.dp));Text(t.category.lowercase().replaceFirstChar{it.uppercase()},color=Muted,fontSize=10.sp)
+            Spacer(Modifier.height(5.dp));Row(verticalAlignment=Alignment.CenterVertically){Icon(Icons.Default.Place,null,tint=Forest,modifier=Modifier.size(12.dp));Spacer(Modifier.width(3.dp));Text(t.distance,color=Forest,fontSize=10.sp,fontWeight=FontWeight.Medium)}
+        }
+        Icon(Icons.Default.ChevronRight,null,tint=Muted,modifier=Modifier.size(19.dp))
     }
 }
 
-@Composable private fun BottomBar(selected: Page,onSelect:(Page)->Unit) {
-    NavigationBar(containerColor=Color(0xFF0D1220),contentColor=Muted,tonalElevation=0.dp) {
-        listOf(Triple(Page.MAP,Icons.Default.Explore,"Hunt"),Triple(Page.COLLECTION,Icons.Default.GridView,"Collection"),Triple(Page.MARKET,Icons.Default.Storefront,"Market"),Triple(Page.PROFILE,Icons.Default.Person,"Profile")).forEach { (page,icon,label) ->
-            NavigationBarItem(selected==page,onClick={onSelect(page)},icon={Icon(icon,null)},label={Text(label,fontSize=10.sp)},colors=NavigationBarItemDefaults.colors(selectedIconColor=Cyan,selectedTextColor=Cyan,indicatorColor=PanelLight,unselectedIconColor=Muted,unselectedTextColor=Muted))
+@Composable private fun PremiumBottomBar(selected:Page,onSelect:(Page)->Unit){
+    NavigationBar(containerColor=Panel,contentColor=Muted,tonalElevation=0.dp,modifier=Modifier.border(width=1.dp,color=Border)){
+        listOf(Triple(Page.MAP,Icons.Default.Explore,"Explore"),Triple(Page.COLLECTION,Icons.Default.GridView,"Collection"),Triple(Page.MARKET,Icons.Default.Storefront,"Market"),Triple(Page.PROFILE,Icons.Default.PersonOutline,"Profile")).forEach{(page,icon,label)->
+            NavigationBarItem(selected==page,onClick={onSelect(page)},icon={Icon(icon,null)},label={Text(label,fontSize=10.sp,fontWeight=FontWeight.Medium)},colors=NavigationBarItemDefaults.colors(selectedIconColor=Forest,selectedTextColor=Forest,indicatorColor=SoftGreen,unselectedIconColor=Muted,unselectedTextColor=Muted))
         }
     }
 }

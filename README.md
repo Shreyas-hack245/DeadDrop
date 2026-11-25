@@ -1,13 +1,13 @@
 # DeadDrop
 
-DeadDrop is a native Android treasure-hunt prototype built with Kotlin, Jetpack Compose, and Material 3. The project is organized into feature, data, and theme packages. It opens directly in an offline demo so an API key or wallet is not needed to explore the experience.
+DeadDrop is a native Android treasure-hunt prototype built with Kotlin, Jetpack Compose, and Material 3. The existing project now uses a cinematic midnight palette, illustrated treasure map, glowing discovery markers, collectible artwork, and a consistent dark component system. The project remains organized into feature, data, and theme packages. It opens directly in an offline demo so an API key or wallet is not needed to explore the experience.
 
 ## Run the demo
 
 1. Install Android Studio with Android SDK Platform 36 and JDK 17 or newer.
 2. Open this folder as an existing Gradle project and let Gradle sync.
 3. Run the `app` configuration on an Android 8.0+ device or emulator.
-4. Choose **Start exploring**. Tap a signal on the map, review its clue, grant location permission or explicitly simulate demo arrival, use the seeded QR token or sample QR button, and solve the sample answer `MOON`.
+4. Choose **Explore nearby**. Tap a signal on the map, review its clue, grant location permission or explicitly simulate demo arrival, use the seeded QR token or sample QR button, and solve the sample answer `MOON`.
 5. The reward is saved to the in-memory demo collection for the current app session.
 
 The seeded San Francisco coordinates and distances are illustrative. The map in demo mode is a custom offline illustration, not Google Maps data. The GPS screen requests permission, reads the last fused location when available, and calculates distance to the seeded coordinates. You may explicitly simulate an arrival so the demo remains usable away from San Francisco. The sample QR token and puzzle are local demo steps; neither is a server-verified challenge. Demo artifacts are off chain.

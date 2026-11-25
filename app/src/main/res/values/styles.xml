@@ -1,1 +1,11 @@
-<resources><style name="Theme.DeadDrop" parent="android:style/Theme.Material.Light.NoActionBar"><item name="android:fontFamily">sans</item><item name="android:colorAccent">#A78BFA</item><item name="android:windowLightStatusBar">false</item><item name="android:statusBarColor">#080B16</item><item name="android:navigationBarColor">#080B16</item></style></resources>
+<resources>
+    <style name="Theme.DeadDrop" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:colorAccent">#9B59FF</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:statusBarColor">#080914</item>
+        <item name="android:navigationBarColor">#080914</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:windowBackground">#080914</item>
+    </style>
+</resources>
