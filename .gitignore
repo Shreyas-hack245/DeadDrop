@@ -1,19 +1,34 @@
-*.iml
-.gradle
-.kotlin
-/local.properties
-/.idea/caches
-/.idea/libraries
-/.idea/modules.xml
-/.idea/workspace.xml
-/.idea/navEditor.xml
-/.idea/assetWizardSettings.xml
-.DS_Store
-/build
-/captures
+# Gradle / Kotlin
+.gradle/
+.kotlin/
+build/
+*/build/
+captures/
 .externalNativeBuild
 .cxx
-local.properties
+
+# Android Studio / IntelliJ
+.idea/
+*.iml
+
+# Local config & secrets
 .env
-debug.keystore
+local.properties
+*.keystore
+*.jks
+keystore.properties
+
+# Logs / OS
 *-debug.log
+*.log
+.DS_Store
+
+# Tooling
+.github/modernize/
+
+# Firebase local
+.firebase/
+firebase-debug.log
+node_modules/
+
+app/google-services.json
