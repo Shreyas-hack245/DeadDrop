@@ -18,7 +18,7 @@ An Android app that turns real-world treasure hunting into a collectible, blockc
 
 ---
 
-##  About
+## 📖 About
 
 DeadDrop is a dark-fantasy exploration game played in the real world. Treasures are hidden at real locations on a live map. You travel there, prove you found it with **GPS**, a **QR seal** or an **arcane cipher**, and claim a unique artifact for your vault. Players can also hide treasures of their own for others to find.
 
@@ -28,7 +28,7 @@ The long-term vision is for every artifact to be a verifiable, tradeable digital
 
 ---
 
-##  Gallery
+## 🖼️ Gallery
 
 <div align="center">
 <table>
@@ -46,24 +46,24 @@ The long-term vision is for every artifact to be a verifiable, tradeable digital
 
 ---
 
-##  Features
+## ✨ Features
 
 | | Feature | Description |
 |---|---|---|
-| 1 | **Explore map** | Google Maps view of nearby treasures with live GPS. Falls back to an animated *Cartographic Radar* demo mode without a Maps key. |
-| 2 | **Four challenge types** | GPS proximity · QR seal scan · Arcane cipher (puzzle answer) · Combined GPS + seal/cipher. |
-| 3 | **Vault** | Your collection of claimed artifacts, graded **Common, Rare, Epic, Mythic**. |
-| 4 | **Create treasures** | Place and publish your own treasure with a category, difficulty, rarity and challenge. |
-| 5 | **Exchange** | Simulated marketplace: list and buy artifacts with in-game Gold Coins. |
-| 6 | **Profile** | Username, avatar, level, XP, gold, stats and an activity feed. |
-| 7 | **Google Sign-In** | Firebase Auth via Credential Manager. |
+| 🗺️ | **Explore map** | Google Maps view of nearby treasures with live GPS. Falls back to an animated *Cartographic Radar* demo mode without a Maps key. |
+| 🎯 | **Four challenge types** | GPS proximity · QR seal scan · Arcane cipher (puzzle answer) · Combined GPS + seal/cipher. |
+| 💎 | **Vault** | Your collection of claimed artifacts, graded **Common, Rare, Epic, Mythic**. |
+| 🛠️ | **Create treasures** | Place and publish your own treasure with a category, difficulty, rarity and challenge. |
+| 🏪 | **Exchange** | Simulated marketplace: list and buy artifacts with in-game Gold Coins. |
+| 👤 | **Profile** | Username, avatar, level, XP, gold, stats and an activity feed. |
+| 🔐 | **Google Sign-In** | Firebase Auth via Credential Manager. |
 
 **Categories:** Ancient Relic · Arcane Cache · Urban Cipher · Shadow Vault · Mystic Shrine
 **Difficulty:** Novice · Adept · Master · Legendary
 
 ---
 
-##  How it works
+## 🔄 How it works
 
 ```
  Explore map ──► Travel to treasure ──► Solve challenge ──► Claim artifact ──► Vault
@@ -74,7 +74,7 @@ The long-term vision is for every artifact to be a verifiable, tradeable digital
 
 ---
 
-##  Tech stack
+## 🧰 Tech stack
 
 | Area | Technology |
 |---|---|
@@ -91,7 +91,7 @@ The long-term vision is for every artifact to be a verifiable, tradeable digital
 
 ---
 
-##  Project structure
+## 📁 Project structure
 
 ```
 DeadDrop/
@@ -127,7 +127,7 @@ marketplace_listings/{id}    exchange listings
 
 ---
 
-##  Getting started
+## 🚀 Getting started
 
 ### 1. Clone
 ```bash
@@ -169,7 +169,7 @@ Open in Android Studio, sync Gradle, and run on an emulator or device. A real de
 
 ---
 
-##  Testing
+## 🧪 Testing
 
 ```bash
 ./gradlew test                    # unit tests
@@ -178,7 +178,7 @@ Open in Android Studio, sync Gradle, and run on an emulator or device. A real de
 
 ---
 
-##  Roadmap
+## 🗺️ Roadmap
 
 - [x] Live map exploration with GPS and radar demo mode
 - [x] GPS, QR and cipher challenges
@@ -193,7 +193,7 @@ Open in Android Studio, sync Gradle, and run on an emulator or device. A real de
 
 ---
 
-##  Security notes
+## 🔐 Security notes
 
 - Never commit `.env`, keystores (`*.keystore`, `*.jks`) or `local.properties`.
 - Restrict your Maps and Firebase API keys in Google Cloud Console (package name + SHA-1).
@@ -201,14 +201,13 @@ Open in Android Studio, sync Gradle, and run on an emulator or device. A real de
 
 ---
 
-##  Contributing
+## 🤝 Contributing
 
 Issues and pull requests are welcome. Fork the repo, create a feature branch, and open a PR.
 
-##  License
+## 📄 License
 
-This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
-
+Add a `LICENSE` file (e.g. MIT) to the repo root.
 
 ---
 

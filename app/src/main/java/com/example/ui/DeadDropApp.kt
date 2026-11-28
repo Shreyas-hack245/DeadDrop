@@ -1,6 +1,11 @@
 package com.example.ui
 
+import android.Manifest
+import android.app.Activity
 import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -45,13 +50,17 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import androidx.core.app.ActivityCompat
 import androidx.credentials.CredentialManager
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -74,6 +83,9 @@ import com.example.data.preferences.UserPreferencesRepository
 import com.example.ui.screens.AuthScreen
 import com.example.ui.screens.CollectionScreen
 import com.example.ui.screens.CreateTreasureScreen
+import com.example.ui.screens.LocationRationaleDialog
+import com.example.ui.screens.findActivity
+import com.example.ui.screens.openAppSettings
 import com.example.ui.screens.ExploreMapScreen
 import com.example.ui.screens.MarketplaceScreen
 import com.example.ui.screens.OnboardingScreen
@@ -206,6 +218,62 @@ private fun AuthenticatedDeadDropShell(
     val achievements by viewModel.achievements.collectAsStateWithLifecycle()
     val preferences by viewModel.userPreferences.collectAsStateWithLifecycle()
     val statusBanner by viewModel.statusBanner.collectAsStateWithLifecycle()
+    val locationState by viewModel.locationUiState.collectAsStateWithLifecycle()
+    val pendingGpsResolution by viewModel.gpsResolution.collectAsStateWithLifecycle()
+
+    // ---- Location permission + GPS-settings flow ------------------------------------------------
+    // "Not now" is remembered across rotation AND process death (rememberSaveable), but not across
+    // fresh launches, so the rationale is offered again next time while permission is still missing.
+    var rationaleDismissed by rememberSaveable { mutableStateOf(false) }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { grants ->
+        val granted = grants[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+            grants[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        val activity = context.findActivity()
+        // Denied + system will not show the dialog again => "don't ask again": send the user to settings next time.
+        val permanentlyDenied = !granted && activity != null &&
+            !ActivityCompat.shouldShowRequestPermissionRationale(activity, Manifest.permission.ACCESS_FINE_LOCATION) &&
+            !ActivityCompat.shouldShowRequestPermissionRationale(activity, Manifest.permission.ACCESS_COARSE_LOCATION)
+        viewModel.onLocationPermissionResult(granted, permanentlyDenied)
+    }
+
+    val gpsResolutionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartIntentSenderForResult()
+    ) { result ->
+        viewModel.onGpsResolutionResult(result.resultCode == Activity.RESULT_OK)
+    }
+
+    LaunchedEffect(pendingGpsResolution) {
+        pendingGpsResolution?.let { pending ->
+            viewModel.consumeGpsResolution()
+            gpsResolutionLauncher.launch(IntentSenderRequest.Builder(pending).build())
+        }
+    }
+
+    // Re-read the real permission state whenever the app returns to the foreground
+    // (first start, back from system settings, process restore). Never shows a dialog by itself.
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        viewModel.syncPermissionFromSystem()
+    }
+
+    val requestLocationAccess: () -> Unit = {
+        when {
+            locationState.isPermissionGranted -> viewModel.retryLocation()
+            locationState.permission == LocationPermissionStatus.PERMANENTLY_DENIED -> openAppSettings(context)
+            else -> permissionLauncher.launch(
+                arrayOf(
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                    Manifest.permission.ACCESS_COARSE_LOCATION
+                )
+            )
+        }
+    }
+
+    val showLocationRationale = !rationaleDismissed &&
+        locationState.permission != LocationPermissionStatus.UNKNOWN &&
+        !locationState.isPermissionGranted
 
     val snackbarHostState = remember { SnackbarHostState() }
     LaunchedEffect(statusBanner) {
@@ -352,7 +420,10 @@ private fun AuthenticatedDeadDropShell(
                                     viewModel.resetCreateDraft()
                                     navController.navigate(DeadDropRoutes.CREATE_TREASURE)
                                 },
-                                onRequestLocationUpdates = viewModel::startLocationUpdatesIfPermitted
+                                locationState = locationState,
+                                onEnableLocation = requestLocationAccess,
+                                onTurnOnGps = viewModel::retryLocation,
+                                onRetryLocation = viewModel::retryLocation
                             )
                         }
 
@@ -391,6 +462,7 @@ private fun AuthenticatedDeadDropShell(
                                 onUpdateProfile = viewModel::updateProfile,
                                 onToggleHaptics = viewModel::setHapticsEnabled,
                                 onToggleStarterDrops = viewModel::setShowStarterDrops,
+                                onRegenerateStarterDrops = viewModel::regenerateStarterDropsNearMe,
                                 onSignOut = {
                                     signOut(credentialManager, scope)
                                 }
@@ -460,6 +532,17 @@ private fun AuthenticatedDeadDropShell(
                     }
                 }
             }
+        }
+
+        if (showLocationRationale) {
+            LocationRationaleDialog(
+                permanentlyDenied = locationState.permission == LocationPermissionStatus.PERMANENTLY_DENIED,
+                onEnable = {
+                    rationaleDismissed = true
+                    requestLocationAccess()
+                },
+                onNotNow = { rationaleDismissed = true }
+            )
         }
 
         unlockCelebration?.let { celebration ->

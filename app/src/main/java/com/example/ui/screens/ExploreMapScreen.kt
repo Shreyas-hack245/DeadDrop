@@ -1,8 +1,5 @@
 package com.example.ui.screens
 
-import android.Manifest
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -62,6 +59,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -72,7 +70,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -83,6 +80,7 @@ import com.example.data.location.LocationTracker
 import com.example.domain.model.ChallengeType
 import com.example.domain.model.Rarity
 import com.example.ui.ExploreFilterState
+import com.example.ui.LocationUiState
 import com.example.ui.TreasureWithDistance
 import com.example.ui.components.ArcaneCard
 import com.example.ui.components.ChallengeTypeChip
@@ -121,7 +119,7 @@ import kotlin.math.cos
 import kotlin.math.hypot
 import kotlin.math.sin
 
-private const val DARK_FANTASY_MAP_STYLE = """
+internal const val DARK_FANTASY_MAP_STYLE = """
 [
   {"elementType": "geometry", "stylers": [{"color": "#0d0a1a"}]},
   {"elementType": "labels.text.fill", "stylers": [{"color": "#9f94c9"}]},
@@ -132,6 +130,8 @@ private const val DARK_FANTASY_MAP_STYLE = """
   {"featureType": "poi.park", "elementType": "geometry", "stylers": [{"color": "#101b24"}]}
 ]
 """
+
+private const val USER_ZOOM = 16f
 
 fun hasConfiguredMapsApiKey(): Boolean {
     val key = BuildConfig.MAPS_API_KEY
@@ -151,34 +151,59 @@ fun ExploreMapScreen(
     onSelectTreasure: (String) -> Unit,
     onOpenTreasureDetail: (String) -> Unit,
     onCreateTreasureClick: () -> Unit,
-    onRequestLocationUpdates: () -> Unit,
+    locationState: LocationUiState,
+    onEnableLocation: () -> Unit,
+    onTurnOnGps: () -> Unit,
+    onRetryLocation: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val useLiveGoogleMaps = remember { hasConfiguredMapsApiKey() }
 
-    val locationPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestMultiplePermissions()
-    ) { grants ->
-        val granted = grants[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
-            grants[Manifest.permission.ACCESS_COARSE_LOCATION] == true
-        if (granted) onRequestLocationUpdates()
-    }
+    var zoomFactor by remember { mutableFloatStateOf(1f) }
+    var panOffset by remember { mutableStateOf(Offset.Zero) }
 
-    LaunchedEffect(Unit) {
-        val tracker = LocationTracker(context)
-        if (tracker.hasLocationPermission()) {
-            onRequestLocationUpdates()
+    // Camera starts on the user when we already have a live fix; otherwise on the default anchor.
+    // It is never started on the treasures' fixed coordinates. rememberCameraPositionState is itself
+    // saveable, so rotation / process death restore the last camera position.
+    val startedWithLiveFix = currentLocation.isGpsLive
+    val cameraPositionState = rememberCameraPositionState {
+        position = CameraPosition.fromLatLngZoom(
+            LatLng(currentLocation.latitude, currentLocation.longitude),
+            if (startedWithLiveFix) USER_ZOOM else 15f
+        )
+    }
+    var hasCenteredOnUser by rememberSaveable { mutableStateOf(startedWithLiveFix) }
+    var hasCenteredOnFallback by rememberSaveable { mutableStateOf(false) }
+
+    // First real fix -> animate to the user at ~zoom 16, once.
+    LaunchedEffect(currentLocation.isGpsLive) {
+        if (currentLocation.isGpsLive && !hasCenteredOnUser) {
+            hasCenteredOnUser = true
+            panOffset = Offset.Zero
+            if (useLiveGoogleMaps) {
+                cameraPositionState.animate(
+                    CameraUpdateFactory.newLatLngZoom(
+                        LatLng(currentLocation.latitude, currentLocation.longitude), USER_ZOOM
+                    )
+                )
+            }
         }
     }
 
-    var zoomFactor by remember { mutableFloatStateOf(1f) }
-    var panOffset by remember { mutableStateOf(Offset.Zero) }
-    val cameraPositionState = rememberCameraPositionState {
-        position = CameraPosition.fromLatLngZoom(
-            LatLng(currentLocation.latitude, currentLocation.longitude), 15.5f
-        )
+    // No location available at all (declined / timed out): only now centre on the starter drops.
+    val starterDrops = treasures.filter { it.treasure.isRealmStarterDemo }
+    LaunchedEffect(locationState.isLocationUnavailable, starterDrops.isNotEmpty()) {
+        if (locationState.isLocationUnavailable && !currentLocation.isGpsLive &&
+            !hasCenteredOnFallback && starterDrops.isNotEmpty() && useLiveGoogleMaps
+        ) {
+            hasCenteredOnFallback = true
+            val lat = starterDrops.map { it.treasure.latitude }.average()
+            val lon = starterDrops.map { it.treasure.longitude }.average()
+            cameraPositionState.animate(
+                CameraUpdateFactory.newLatLngZoom(LatLng(lat, lon), 14.5f)
+            )
+        }
     }
 
     LaunchedEffect(selectedTreasureId) {
@@ -201,7 +226,7 @@ fun ExploreMapScreen(
                 cameraPositionState = cameraPositionState,
                 properties = MapProperties(
                     mapStyleOptions = MapStyleOptions(DARK_FANTASY_MAP_STYLE),
-                    isMyLocationEnabled = currentLocation.isGpsLive
+                    isMyLocationEnabled = locationState.isPermissionGranted
                 ),
                 uiSettings = MapUiSettings(
                     zoomControlsEnabled = false,
@@ -249,6 +274,19 @@ fun ExploreMapScreen(
                 onSelectTreasure = onSelectTreasure,
                 modifier = Modifier.fillMaxSize()
             )
+        }
+
+        // First-fix loading state: dim the (not yet relevant) default map and show a spinner
+        val awaitingFirstFix = locationState.isLoading && !currentLocation.isGpsLive
+        if (awaitingFirstFix) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(VoidBlack.copy(alpha = 0.55f)),
+                contentAlignment = Alignment.Center
+            ) {
+                LocationLoadingChip()
+            }
         }
 
         // Top Floating Search + Filter Bar
@@ -342,6 +380,14 @@ fun ExploreMapScreen(
                 }
             }
 
+            LocationStatusBanner(
+                state = locationState,
+                onEnableLocation = onEnableLocation,
+                onTurnOnGps = onTurnOnGps,
+                onRetry = onRetryLocation,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+            )
+
             if (!useLiveGoogleMaps) {
                 Surface(
                     modifier = Modifier
@@ -375,24 +421,22 @@ fun ExploreMapScreen(
         ) {
             SmallFloatingActionButton(
                 onClick = {
-                    val tracker = LocationTracker(context)
-                    if (!tracker.hasLocationPermission()) {
-                        locationPermissionLauncher.launch(
-                            arrayOf(
-                                Manifest.permission.ACCESS_FINE_LOCATION,
-                                Manifest.permission.ACCESS_COARSE_LOCATION
-                            )
-                        )
-                    } else {
-                        onRequestLocationUpdates()
-                        panOffset = Offset.Zero
-                        if (useLiveGoogleMaps) {
-                            scope.launch {
-                                cameraPositionState.animate(
-                                    CameraUpdateFactory.newLatLngZoom(
-                                        LatLng(currentLocation.latitude, currentLocation.longitude), 16f
+                    when {
+                        // No permission -> run the permission flow (dialog, or app settings if permanently denied)
+                        !locationState.isPermissionGranted -> onEnableLocation()
+                        // Permission but no fix yet -> re-run GPS check + acquisition
+                        !currentLocation.isGpsLive -> onRetryLocation()
+                        else -> {
+                            panOffset = Offset.Zero
+                            if (useLiveGoogleMaps) {
+                                scope.launch {
+                                    cameraPositionState.animate(
+                                        CameraUpdateFactory.newLatLngZoom(
+                                            LatLng(currentLocation.latitude, currentLocation.longitude),
+                                            USER_ZOOM
+                                        )
                                     )
-                                )
+                                }
                             }
                         }
                     }
@@ -475,7 +519,26 @@ fun ExploreMapScreen(
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            if (treasures.isEmpty()) {
+            if (awaitingFirstFix) {
+                ArcaneCard(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp),
+                    borderColor = ArcaneOutline
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Icon(Icons.Rounded.MyLocation, contentDescription = null, tint = DiscoveryCyan)
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Locating you…", style = MaterialTheme.typography.titleSmall, color = TextPrimary)
+                            Text("Distances appear once we have your position.", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                        }
+                    }
+                }
+            } else if (treasures.isEmpty()) {
                 ArcaneCard(
                     modifier = Modifier
                         .fillMaxWidth()

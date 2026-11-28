@@ -459,6 +459,13 @@ fun TreasureDetailAndHuntScreen(
                                     )
                                 }
 
+                                // Live tracking: compass to the treasure, your heading, mini map + place label
+                                HuntTrackerPanel(
+                                    treasure = treasure,
+                                    currentLocation = currentLocation,
+                                    distanceMeters = realDistanceMeters
+                                )
+
                                 // Explicit Demo Simulation Toggle (Clearly Labeled!)
                                 Surface(
                                     shape = RoundedCornerShape(14.dp),

@@ -4,8 +4,8 @@
 build/
 */build/
 captures/
-.externalNativeBuild
-.cxx
+.externalNativeBuild/
+.cxx/
 
 # Android Studio / IntelliJ
 .idea/
@@ -13,6 +13,7 @@ captures/
 
 # Local config & secrets
 .env
+*.env
 local.properties
 *.keystore
 *.jks
@@ -31,4 +32,10 @@ keystore.properties
 firebase-debug.log
 node_modules/
 
+# Firebase configuration
 app/google-services.json
+
+# Generated Android packages
+*.apk
+*.aab
+

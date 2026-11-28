@@ -1,10 +1,12 @@
 package com.example.ui
 
+import android.app.PendingIntent
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.firebase.DeadDropRepository
 import com.example.data.location.GeoPoint
+import com.example.data.location.LocationSettingsStatus
 import com.example.data.location.LocationTracker
 import com.example.data.preferences.UserPreferences
 import com.example.data.preferences.UserPreferencesRepository
@@ -18,12 +20,15 @@ import com.example.domain.model.ListingCategory
 import com.example.domain.model.MarketplaceListing
 import com.example.domain.model.Rarity
 import com.example.domain.model.StarterWorldData
+import com.example.domain.model.StarterWorldSnapshot
 import com.example.domain.model.Treasure
 import com.example.domain.model.TreasureCategory
 import com.example.domain.model.UserProfile
+import com.google.android.gms.maps.model.LatLng
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.FirebaseFirestoreException
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -34,12 +39,45 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlin.random.Random
 
 sealed interface UiState<out T> {
     data object Loading : UiState<Nothing>
     data class Success<T>(val data: T) : UiState<T>
     data class Error(val message: String) : UiState<Nothing>
+}
+
+enum class LocationPermissionStatus { UNKNOWN, GRANTED, DENIED, PERMANENTLY_DENIED }
+
+/**
+ * Everything the UI needs to know about location access, as one immutable state.
+ *
+ * @property latLng the most recent REAL position, or null until the first fix arrives.
+ * @property isLoading true while waiting for the first fix.
+ * @property timedOut true if no first fix arrived within the timeout (a later fix clears it).
+ */
+data class LocationUiState(
+    val permission: LocationPermissionStatus = LocationPermissionStatus.UNKNOWN,
+    val gpsEnabled: Boolean = true,
+    val isLoading: Boolean = false,
+    val hasFix: Boolean = false,
+    val timedOut: Boolean = false,
+    val errorMessage: String? = null,
+    val latLng: LatLng? = null
+) {
+    val isPermissionGranted: Boolean get() = permission == LocationPermissionStatus.GRANTED
+
+    /** No real location is available and none is on the way (declined, or the first fix timed out). */
+    val isLocationUnavailable: Boolean
+        get() = !hasFix && when (permission) {
+            LocationPermissionStatus.UNKNOWN -> false
+            LocationPermissionStatus.GRANTED -> timedOut
+            else -> true
+        }
 }
 
 data class TreasureWithDistance(
@@ -109,10 +147,28 @@ class DeadDropViewModel(
     defaultDisplayName: String?
 ) : ViewModel() {
 
-    private var locationJob: Job? = null
+    private var updatesJob: Job? = null
+    private var acquireJob: Job? = null
+    private var timeoutJob: Job? = null
+
+    // Guards against ON_RESUME and the permission-result callback both starting the flow at once
+    // (which could otherwise show the "Turn on location" dialog twice).
+    private var locationStartInProgress = false
 
     private val _currentLocation = MutableStateFlow(LocationTracker.DEFAULT_ANCHOR)
     val currentLocation: StateFlow<GeoPoint> = _currentLocation.asStateFlow()
+
+    private val _locationUi = MutableStateFlow(LocationUiState())
+    val locationUiState: StateFlow<LocationUiState> = _locationUi.asStateFlow()
+
+    /** One-shot request for the UI to show the system "Turn on location" dialog. Cleared once consumed. */
+    private val _gpsResolution = MutableStateFlow<PendingIntent?>(null)
+    val gpsResolution: StateFlow<PendingIntent?> = _gpsResolution.asStateFlow()
+
+    // Starter world (per user, persisted in DataStore). null = nothing generated/loaded yet.
+    private val _starterSnapshot = MutableStateFlow<StarterWorldSnapshot?>(null)
+    private val starterSnapshotLoaded = CompletableDeferred<Unit>()
+    private val starterMutex = Mutex()
 
     private val _exploreFilter = MutableStateFlow(ExploreFilterState())
     val exploreFilter: StateFlow<ExploreFilterState> = _exploreFilter.asStateFlow()
@@ -184,19 +240,44 @@ class DeadDropViewModel(
         "Failed to observe relic exchange"
     )
 
+    /**
+     * Starter drops currently visible on the map:
+     * - hidden when the "Starter drops" setting is off;
+     * - the saved per-user layout (placed around the user's real location) when one exists;
+     * - nothing while the very first fix is still pending (avoids flashing drops in the wrong city);
+     * - a stable layout around the default anchor when no location is available at all (never saved).
+     */
+    private val starterTreasures: StateFlow<List<Treasure>> = combine(
+        _starterSnapshot,
+        _locationUi,
+        userPreferences
+    ) { snapshot, loc, prefs ->
+        val waitingForFirstFix = (loc.isPermissionGranted && !loc.hasFix && !loc.timedOut) ||
+            loc.permission == LocationPermissionStatus.UNKNOWN
+        when {
+            !prefs.showStarterDrops -> emptyList()
+            snapshot != null ->
+                if (waitingForFirstFix) emptyList() else StarterWorldData.buildTreasures(snapshot)
+            waitingForFirstFix -> emptyList()
+            else -> StarterWorldData.fallbackTreasuresAround(
+                LocationTracker.DEFAULT_ANCHOR.latitude,
+                LocationTracker.DEFAULT_ANCHOR.longitude
+            )
+        }
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000L),
+        initialValue = emptyList()
+    )
+
     val worldTreasures: StateFlow<List<TreasureWithDistance>> = combine(
         cloudTreasuresState,
         artifactsState,
         currentLocation,
-        userPreferences,
+        starterTreasures,
         exploreFilter
-    ) { treasuresUi, artifactsUi, geo, prefs, filter ->
+    ) { treasuresUi, artifactsUi, geo, starters, filter ->
         val cloudList = (treasuresUi as? UiState.Success)?.data ?: emptyList()
-        val starters = if (prefs.showStarterDrops) {
-            StarterWorldData.starterTreasuresAround(geo.latitude, geo.longitude)
-        } else {
-            emptyList()
-        }
         val discoveredIds = ((artifactsUi as? UiState.Success)?.data ?: emptyList())
             .map { it.treasureId }
             .toSet()
@@ -260,37 +341,264 @@ class DeadDropViewModel(
         viewModelScope.launch {
             repository.ensureUserProfile(defaultDisplayName)
         }
-        refreshLocationOnce()
+        viewModelScope.launch {
+            _starterSnapshot.value = preferencesRepository.loadStarterWorld(currentUserId)
+            starterSnapshotLoaded.complete(Unit)
+        }
+        syncPermissionFromSystem()
     }
 
-    fun startLocationUpdatesIfPermitted() {
-        if (!locationTracker.hasLocationPermission()) return
-        if (locationJob?.isActive == true) return
-        refreshLocationOnce()
-        locationJob = viewModelScope.launch {
-            locationTracker.observeLocationUpdates()
-                .catch { Log.w(TAG, "Location stream ended: ${it.message}") }
-                .collect { point ->
-                    _currentLocation.value = point
-                }
+    // ------------------------------------------------------------------------------------------
+    // Location permission + live location
+    // ------------------------------------------------------------------------------------------
+
+    /**
+     * Re-reads the real permission state from the system. Call on every ON_RESUME: it covers first launch,
+     * process death, returning from the app-settings screen, and permission revoked while away.
+     * It never shows a system dialog by itself.
+     */
+    fun syncPermissionFromSystem() {
+        val granted = locationTracker.hasLocationPermission()
+        val previous = _locationUi.value.permission
+        if (granted) {
+            if (previous != LocationPermissionStatus.GRANTED) {
+                startLocationFlow(promptForGps = true)
+            } else if (!_locationUi.value.gpsEnabled) {
+                recheckGpsSilently()
+            }
+        } else {
+            if (previous == LocationPermissionStatus.GRANTED) stopLocationWork()
+            _locationUi.update {
+                it.copy(
+                    permission = if (previous == LocationPermissionStatus.PERMANENTLY_DENIED) {
+                        LocationPermissionStatus.PERMANENTLY_DENIED
+                    } else {
+                        LocationPermissionStatus.DENIED
+                    },
+                    isLoading = false,
+                    timedOut = false
+                )
+            }
         }
     }
 
-    fun refreshLocationOnce() {
+    /**
+     * Result of the system permission dialog. [permanentlyDenied] is computed by the UI
+     * (needs an Activity: denied and shouldShowRequestPermissionRationale == false).
+     */
+    fun onLocationPermissionResult(granted: Boolean, permanentlyDenied: Boolean) {
+        if (granted && locationTracker.hasLocationPermission()) {
+            startLocationFlow(promptForGps = true)
+        } else {
+            stopLocationWork()
+            _locationUi.update {
+                it.copy(
+                    permission = if (permanentlyDenied) {
+                        LocationPermissionStatus.PERMANENTLY_DENIED
+                    } else {
+                        LocationPermissionStatus.DENIED
+                    },
+                    isLoading = false,
+                    timedOut = false
+                )
+            }
+        }
+    }
+
+    /** Banner "Retry" / recenter: re-runs the GPS check and a fresh acquisition (permission must be granted). */
+    fun retryLocation() {
+        if (!locationTracker.hasLocationPermission()) return
+        startLocationFlow(promptForGps = true)
+    }
+
+    /** Kept for screens that only want "make sure updates are running if we are allowed to". */
+    fun startLocationUpdatesIfPermitted() {
+        syncPermissionFromSystem()
+    }
+
+    fun onGpsResolutionResult(userEnabledGps: Boolean) {
+        if (userEnabledGps) {
+            _locationUi.update { it.copy(gpsEnabled = true) }
+            beginAcquisition()
+        } else {
+            _locationUi.update { it.copy(gpsEnabled = false) }
+        }
+    }
+
+    fun consumeGpsResolution() {
+        _gpsResolution.value = null
+    }
+
+    private fun startLocationFlow(promptForGps: Boolean) {
+        if (locationStartInProgress) return
+        locationStartInProgress = true
+        _locationUi.update {
+            it.copy(
+                permission = LocationPermissionStatus.GRANTED,
+                isLoading = !it.hasFix,
+                timedOut = false,
+                errorMessage = null
+            )
+        }
         viewModelScope.launch {
-            val fresh = locationTracker.getCurrentLocationOrNull()
-            if (fresh != null) {
-                _currentLocation.value = fresh
-                // Also pre-center draft location if user hasn't picked one yet
-                _createDraft.update { draft ->
-                    if (draft.step == 0 && draft.name.isBlank()) {
-                        draft.copy(
-                            latitude = fresh.latitude + 0.0007,
-                            longitude = fresh.longitude + 0.0007
-                        )
-                    } else draft
+            try {
+                when (val settings = locationTracker.checkLocationSettings()) {
+                    is LocationSettingsStatus.Satisfied ->
+                        _locationUi.update { it.copy(gpsEnabled = true) }
+                    is LocationSettingsStatus.Resolvable -> {
+                        _locationUi.update { it.copy(gpsEnabled = false) }
+                        if (promptForGps) _gpsResolution.value = settings.resolution
+                    }
+                    is LocationSettingsStatus.Unavailable ->
+                        _locationUi.update { it.copy(gpsEnabled = true) }
+                }
+                // Always try: a cached last location may still work even while GPS is off.
+                beginAcquisition()
+            } finally {
+                locationStartInProgress = false
+            }
+        }
+    }
+
+    private fun recheckGpsSilently() {
+        viewModelScope.launch {
+            if (locationTracker.checkLocationSettings() is LocationSettingsStatus.Satisfied) {
+                _locationUi.update { it.copy(gpsEnabled = true) }
+                beginAcquisition()
+            }
+        }
+    }
+
+    /**
+     * Starts (or restarts) the live stream, a one-shot "current location, fall back to last known" request,
+     * and the ~10 s first-fix timeout. The first position from either source ends the loading state.
+     */
+    private fun beginAcquisition() {
+        if (!locationTracker.hasLocationPermission()) return
+        timeoutJob?.cancel()
+        acquireJob?.cancel()
+        updatesJob?.cancel()
+
+        _locationUi.update { if (it.hasFix) it else it.copy(isLoading = true, timedOut = false) }
+
+        updatesJob = viewModelScope.launch {
+            locationTracker.observeLocationUpdates()
+                .catch { Log.w(TAG, "Location stream ended: ${it.message}") }
+                .collect { point -> onFix(point) }
+        }
+        acquireJob = viewModelScope.launch {
+            val point = locationTracker.getCurrentLocationOrNull()
+            // If the live stream already delivered something fresher, do not overwrite it.
+            if (point != null && !_locationUi.value.hasFix) onFix(point)
+        }
+        timeoutJob = viewModelScope.launch {
+            delay(FIRST_FIX_TIMEOUT_MS)
+            if (!_locationUi.value.hasFix) {
+                _locationUi.update {
+                    it.copy(
+                        isLoading = false,
+                        timedOut = true,
+                        errorMessage = "We couldn't find your location yet."
+                    )
                 }
             }
+        }
+    }
+
+    private fun stopLocationWork() {
+        timeoutJob?.cancel()
+        acquireJob?.cancel()
+        updatesJob?.cancel()
+        timeoutJob = null
+        acquireJob = null
+        updatesJob = null
+    }
+
+    private fun onFix(point: GeoPoint) {
+        _currentLocation.value = point
+        _locationUi.update {
+            it.copy(
+                hasFix = true,
+                isLoading = false,
+                timedOut = false,
+                errorMessage = null,
+                latLng = LatLng(point.latitude, point.longitude)
+            )
+        }
+        // Pre-centre the "forge drop" draft if the user has not started one yet
+        _createDraft.update { draft ->
+            if (draft.step == 0 && draft.name.isBlank()) {
+                draft.copy(
+                    latitude = point.latitude + 0.0007,
+                    longitude = point.longitude + 0.0007
+                )
+            } else draft
+        }
+        ensureStarterWorld(point)
+    }
+
+    /** One-shot refresh used by "anchor to current location" in the forge wizard. */
+    fun refreshLocationOnce() {
+        viewModelScope.launch {
+            locationTracker.getCurrentLocationOrNull()?.let { onFix(it) }
+        }
+    }
+
+    // ------------------------------------------------------------------------------------------
+    // Starter drops placed relative to the user
+    // ------------------------------------------------------------------------------------------
+
+    private fun ensureStarterWorld(point: GeoPoint) {
+        if (!point.isGpsLive) return
+        // Cheap pre-check so a location update every ~3 s does not spawn work when nothing changed.
+        val cached = _starterSnapshot.value
+        if (starterSnapshotLoaded.isCompleted && cached != null &&
+            !StarterWorldData.needsRegeneration(cached, distanceFromBase(cached, point))
+        ) return
+
+        viewModelScope.launch {
+            starterSnapshotLoaded.await()
+            starterMutex.withLock {
+                val saved = _starterSnapshot.value
+                if (StarterWorldData.needsRegeneration(saved, saved?.let { distanceFromBase(it, point) })) {
+                    generateAndSaveStarterWorld(point)
+                }
+            }
+        }
+    }
+
+    private fun distanceFromBase(snapshot: StarterWorldSnapshot, point: GeoPoint): Double =
+        LocationTracker.distanceMeters(
+            snapshot.baseLatitude, snapshot.baseLongitude, point.latitude, point.longitude
+        )
+
+    private suspend fun generateAndSaveStarterWorld(point: GeoPoint) {
+        val snapshot = StarterWorldData.generateSnapshot(
+            baseLatitude = point.latitude,
+            baseLongitude = point.longitude,
+            seed = Random.nextLong()
+        )
+        _starterSnapshot.value = snapshot
+        try {
+            preferencesRepository.saveStarterWorld(currentUserId, snapshot)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not persist starter world", e)
+        }
+    }
+
+    /** Profile > "Regenerate starter drops near me". */
+    fun regenerateStarterDropsNearMe() {
+        val point = _currentLocation.value
+        if (!point.isGpsLive) {
+            showMessage("Enable location first so starter drops can be placed near you.")
+            return
+        }
+        viewModelScope.launch {
+            starterSnapshotLoaded.await()
+            starterMutex.withLock { generateAndSaveStarterWorld(point) }
+            showMessage("Starter drops regenerated around your current location.")
         }
     }
 
@@ -545,5 +853,6 @@ class DeadDropViewModel(
 
     private companion object {
         const val TAG = "DeadDropVM"
+        const val FIRST_FIX_TIMEOUT_MS = 10_000L
     }
 }

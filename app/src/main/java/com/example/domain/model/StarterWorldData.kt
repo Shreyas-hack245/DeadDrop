@@ -1,8 +1,48 @@
 package com.example.domain.model
 
+import kotlin.random.Random
+
+/** Where one starter drop was placed for a given user. Everything else about the drop is static template data. */
+data class StarterPlacement(
+    val id: String,
+    val latitude: Double,
+    val longitude: Double
+)
+
+/**
+ * The saved starter world for one user: the base location it was generated around plus the
+ * coordinates of every starter drop. Persisted per user (see UserPreferencesRepository).
+ */
+data class StarterWorldSnapshot(
+    val baseLatitude: Double,
+    val baseLongitude: Double,
+    val seed: Long,
+    val generatedAtMillis: Long,
+    val placements: List<StarterPlacement>,
+    val version: Int = StarterWorldData.SNAPSHOT_VERSION
+)
+
 object StarterWorldData {
 
-    fun starterTreasuresAround(centerLat: Double, centerLon: Double): List<Treasure> = listOf(
+    /** Bump when templates change in a way that requires re-placing drops. */
+    const val SNAPSHOT_VERSION = 1
+
+    /** Starter drops are placed between these distances from the user's base location. */
+    const val MIN_DISTANCE_METERS = 80.0
+    const val MAX_DISTANCE_METERS = 800.0
+
+    /** Saved starter drops are regenerated once the user is further than this from their base. */
+    const val REGENERATE_DISTANCE_METERS = 5_000.0
+
+    /** Fixed seed so the no-location fallback world is stable between launches. */
+    private const val FALLBACK_SEED = 20240611L
+
+    /**
+     * Static content of every starter drop (names, rarities, categories, difficulties, challenge types,
+     * clues and XP rewards). Latitude/longitude here are placeholders - real coordinates come from
+     * [generateSnapshot] / [buildTreasures].
+     */
+    private val templates: List<Treasure> = listOf(
         Treasure(
             id = "starter_obsidian_vault",
             creatorId = "realm_architect",
@@ -13,8 +53,8 @@ object StarterWorldData {
             difficulty = Difficulty.MASTER.name,
             rarity = Rarity.MYTHIC.name,
             imageKey = "obsidian_chest",
-            latitude = centerLat + 0.0018,
-            longitude = centerLon + 0.0014,
+            latitude = 0.0,
+            longitude = 0.0,
             radiusMeters = 80L,
             challengeType = ChallengeType.COMBINED.name,
             clue = "Approach the spire perimeter, then scan the Dread Seal or speak the stone's true metal.",
@@ -41,8 +81,8 @@ object StarterWorldData {
             difficulty = Difficulty.ADEPT.name,
             rarity = Rarity.EPIC.name,
             imageKey = "celestial_astrolabe",
-            latitude = centerLat - 0.0013,
-            longitude = centerLon + 0.0021,
+            latitude = 0.0,
+            longitude = 0.0,
             radiusMeters = 75L,
             challengeType = ChallengeType.GPS_PROXIMITY.name,
             clue = "Step within 75 meters of the eastern meridian coordinates to attune the astrolabe.",
@@ -69,8 +109,8 @@ object StarterWorldData {
             difficulty = Difficulty.ADEPT.name,
             rarity = Rarity.RARE.name,
             imageKey = "shadow_lantern",
-            latitude = centerLat + 0.0009,
-            longitude = centerLon - 0.0019,
+            latitude = 0.0,
+            longitude = 0.0,
             radiusMeters = 60L,
             challengeType = ChallengeType.PUZZLE_ANSWER.name,
             clue = "I devour light yet guide the lost through shadow. What burns inside the gothic cage?",
@@ -97,8 +137,8 @@ object StarterWorldData {
             difficulty = Difficulty.NOVICE.name,
             rarity = Rarity.RARE.name,
             imageKey = "splash_hero",
-            latitude = centerLat - 0.0022,
-            longitude = centerLon - 0.0011,
+            latitude = 0.0,
+            longitude = 0.0,
             radiusMeters = 90L,
             challengeType = ChallengeType.QR_SCAN.name,
             clue = "Scan the Crossroads QR seal using the DeadDrop Arcane Lens.",
@@ -125,8 +165,8 @@ object StarterWorldData {
             difficulty = Difficulty.NOVICE.name,
             rarity = Rarity.COMMON.name,
             imageKey = "obsidian_chest",
-            latitude = centerLat + 0.0004,
-            longitude = centerLon + 0.0005,
+            latitude = 0.0,
+            longitude = 0.0,
             radiusMeters = 100L,
             challengeType = ChallengeType.GPS_PROXIMITY.name,
             clue = "Stand near the central waystone marker to claim your first field token.",
@@ -144,6 +184,70 @@ object StarterWorldData {
             isRealmStarterDemo = true
         )
     )
+
+    val templateIds: List<String> get() = templates.map { it.id }
+
+    /**
+     * Places every starter template around ([baseLatitude], [baseLongitude]).
+     *
+     * Bearings are spread evenly around the compass (with jitter) and distances are spread evenly
+     * across [MIN_DISTANCE_METERS]..[MAX_DISTANCE_METERS] (stratified, with jitter). The two are shuffled
+     * independently so a drop's direction does not predict its distance. The same [seed] always gives
+     * the same layout.
+     */
+    fun generateSnapshot(
+        baseLatitude: Double,
+        baseLongitude: Double,
+        seed: Long,
+        nowMillis: Long = System.currentTimeMillis()
+    ): StarterWorldSnapshot {
+        val rnd = Random(seed)
+        val n = templates.size
+        val sector = 360.0 / n
+        val band = (MAX_DISTANCE_METERS - MIN_DISTANCE_METERS) / n
+        val startBearing = rnd.nextDouble() * 360.0
+        val bearingSlots = (0 until n).shuffled(rnd)
+        val distanceBands = (0 until n).shuffled(rnd)
+
+        val placements = templates.mapIndexed { i, template ->
+            val bearing = (startBearing + bearingSlots[i] * sector + (rnd.nextDouble() - 0.5) * sector * 0.6)
+                .mod(360.0)
+            val distance = MIN_DISTANCE_METERS + distanceBands[i] * band + rnd.nextDouble() * band
+            val point = GeoMath.offset(baseLatitude, baseLongitude, distance, bearing)
+            StarterPlacement(template.id, point.latitude, point.longitude)
+        }
+        return StarterWorldSnapshot(
+            baseLatitude = baseLatitude,
+            baseLongitude = baseLongitude,
+            seed = seed,
+            generatedAtMillis = nowMillis,
+            placements = placements
+        )
+    }
+
+    /** Joins the static templates with a saved snapshot's coordinates. */
+    fun buildTreasures(snapshot: StarterWorldSnapshot): List<Treasure> {
+        val byId = snapshot.placements.associateBy { it.id }
+        return templates.mapNotNull { template ->
+            val placement = byId[template.id] ?: return@mapNotNull null
+            template.copy(latitude = placement.latitude, longitude = placement.longitude)
+        }
+    }
+
+    /** Layout used when no real location is available (permission declined / no fix). Never persisted. */
+    fun fallbackTreasuresAround(centerLatitude: Double, centerLongitude: Double): List<Treasure> =
+        buildTreasures(generateSnapshot(centerLatitude, centerLongitude, FALLBACK_SEED, nowMillis = 0L))
+
+    /** True when [saved] is missing, outdated, incomplete, or the user is far from where it was generated. */
+    fun needsRegeneration(
+        saved: StarterWorldSnapshot?,
+        distanceFromBaseMeters: Double?
+    ): Boolean {
+        if (saved == null) return true
+        if (saved.version != SNAPSHOT_VERSION) return true
+        if (saved.placements.map { it.id }.toSet() != templateIds.toSet()) return true
+        return distanceFromBaseMeters != null && distanceFromBaseMeters > REGENERATE_DISTANCE_METERS
+    }
 
     val simulatedCuratedListings: List<MarketplaceListing> = listOf(
         MarketplaceListing(

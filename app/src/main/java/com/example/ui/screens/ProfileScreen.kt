@@ -92,6 +92,7 @@ fun ProfileScreen(
     onUpdateProfile: (String, String) -> Unit,
     onToggleHaptics: (Boolean) -> Unit,
     onToggleStarterDrops: (Boolean) -> Unit,
+    onRegenerateStarterDrops: () -> Unit,
     onSignOut: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -322,6 +323,14 @@ fun ProfileScreen(
                                     subtitle = "Include curated local starter quests on map",
                                     checked = preferences.showStarterDrops,
                                     onCheckedChange = onToggleStarterDrops
+                                )
+                                ArcaneOutlinedButton(
+                                    text = "Regenerate starter drops near me",
+                                    onClick = onRegenerateStarterDrops,
+                                    borderColor = DiscoveryCyan.copy(alpha = 0.55f),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .testTag("regenerate_starter_drops_button")
                                 )
 
                                 ArcaneOutlinedButton(
